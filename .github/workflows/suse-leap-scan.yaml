@@ -42,7 +42,7 @@ jobs:
             https://download.opensuse.org/repositories/Cloud:/Images:/Leap_16.0/images/openSUSE-Leap-16.0.x86_64-0.99.6-EC2-Build1.53.raw.xz && \
           unxz suse.raw.xz && \
           qemu-img convert -f raw -O qcow2 suse.raw suse-leap.img && \
-          rm suse.raw.xz
+          rm suse.raw
 
       - name: Generate SSH key
         run: |
