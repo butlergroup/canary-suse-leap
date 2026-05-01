@@ -124,7 +124,6 @@ jobs:
             -device virtio-net-pci,netdev=net0 \
             -nographic \
             -serial mon:stdio \
-            -append "console=ttyS0 autoyast=device:/dev/vdb" \
             > vm.log 2>&1 &
 
           echo $! > vm.pid
