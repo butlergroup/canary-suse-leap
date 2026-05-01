@@ -53,16 +53,19 @@ jobs:
           cat > user-data <<EOF
           #cloud-config
           datasource_list: [ NoCloud ]
+          datasource:
+            NoCloud:
+              seedfrom: /dev/vdb
           users:
             - default
             - name: clouduser
               sudo: ALL=(ALL) NOPASSWD:ALL
-              groups: wheel
+              groups: sudo
               shell: /bin/bash
               ssh_authorized_keys:
                 - $(cat id_rsa.pub)
           ssh_pwauth: false
-          disable_root: false
+          disable_root: true
           EOF
 
           cat > meta-data <<EOF
