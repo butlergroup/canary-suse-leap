@@ -41,7 +41,8 @@ jobs:
           curl -L --retry 5 -o suse.raw.xz \
             https://download.opensuse.org/repositories/Cloud:/Images:/Leap_16.0/images/openSUSE-Leap-16.0.x86_64-0.99.6-EC2-Build1.53.raw.xz && \
           unxz suse.raw.xz && \
-          qemu-img convert -f raw -O qcow2 suse.raw suse-leap.img
+          qemu-img convert -f raw -O qcow2 suse.raw suse-leap.img && \
+          rm suse.raw.xz
 
       - name: Generate SSH key
         run: |
@@ -72,13 +73,20 @@ jobs:
 
       - name: Start suse-leap VM
         run: |
-          cp /usr/share/OVMF/OVMF_VARS.fd . && \
+          OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" | head -n 1)
+          OVMF_VARS=$(find /usr/share -name "OVMF_VARS*.fd" | head -n 1)
+
+          echo "Using OVMF_CODE: $OVMF_CODE"
+          echo "Using OVMF_VARS: $OVMF_VARS"
+
+          cp "$OVMF_VARS" ./OVMF_VARS.fd && \
+          ls -R /usr/share | grep -i ovmf || true && \
           qemu-system-x86_64 \
             -m 2048 \
             -smp 2 \
             -machine type=q35,accel=tcg \
             -cpu max \
-            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd \
+            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
             -drive if=pflash,format=raw,file=OVMF_VARS.fd \
             -drive file=suse-leap.img,format=qcow2,if=virtio \
             -drive file=seed.iso,format=raw,if=virtio \
