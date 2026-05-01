@@ -34,7 +34,12 @@ jobs:
             curl \
             openssh-client \
             netcat-openbsd \
-            ca-certificates ovmf
+            ca-certificates \
+            ovmf \
+            python3 \
+            python3-pip \
+            libxml2-utils \
+            jq python3-xmltodict
 
       - name: Download image
         run: |
@@ -59,6 +64,10 @@ jobs:
                 - $(cat id_rsa.pub)
           ssh_pwauth: false
           disable_root: true
+          bootcmd:
+            - systemctl disable jeos-firstboot.service
+            - systemctl mask jeos-firstboot.service
+            - systemctl stop jeos-firstboot.service
           EOF
 
           cat > meta-data <<EOF
@@ -115,6 +124,74 @@ jobs:
         if: failure()
         run: cat vm.log || true
 
+      - name: Run OpenSCAP scan inside VM
+        run: |
+          ssh -i id_rsa -p 2222 \
+            -o StrictHostKeyChecking=no clouduser@localhost <<'EOF'
+          set -e
+
+          sudo zypper refresh
+          sudo zypper install -y openscap-utils scap-security-guide
+
+          # Find a suitable profile (SUSE content varies slightly by release)
+          oscap info /usr/share/xml/scap/ssg/content/ssg-opensuse-leap-ds.xml
+
+          sudo oscap xccdf eval \
+            --profile xccdf_org.ssgproject.content_profile_standard \
+            --results /tmp/openscap-results.xml \
+            --report /tmp/openscap-report.html \
+            /usr/share/xml/scap/ssg/content/ssg-opensuse-leap-ds.xml
+          EOF
+
+      - name: Copy OpenSCAP results
+        run: |
+          scp -i id_rsa -P 2222 \
+            clouduser@localhost:/tmp/openscap-results.xml \
+            openscap-results.xml
+
+      - name: Convert OpenSCAP results to SARIF
+        run: |
+          python3 - <<'EOF'
+          import xml.etree.ElementTree as ET
+          import json
+
+          tree = ET.parse('openscap-results.xml')
+          root = tree.getroot()
+
+          sarif = {
+            "version": "2.1.0",
+            "runs": [{
+              "tool": {
+                "driver": {
+                  "name": "openscap",
+                  "informationUri": "https://www.open-scap.org"
+                }
+              },
+              "results": []
+            }]
+          }
+
+          for rule in root.findall(".//{http://checklists.nist.gov/xccdf/1.2}rule-result"):
+              result = rule.find("{http://checklists.nist.gov/xccdf/1.2}result")
+              if result is None:
+                  continue
+
+              status = result.text
+              if status not in ["fail", "error"]:
+                  continue
+
+              sarif["runs"][0]["results"].append({
+                  "ruleId": rule.get("idref"),
+                  "level": "error",
+                  "message": {
+                      "text": f"OpenSCAP failure: {rule.get('idref')}"
+                  }
+              })
+
+          with open("report-scap.sarif", "w") as f:
+              json.dump(sarif, f, indent=2)
+          EOF
+
       - name: Run Trivy scan inside VM
         run: |
           ssh -i id_rsa -p 2222 clouduser@localhost <<'EOF'
@@ -126,7 +203,7 @@ jobs:
             -o /tmp/report.sarif
           EOF
 
-      - name: Copy report from VM
+      - name: Copy Trivy report from VM
         run: |
           scp -i id_rsa -P 2222 \
             -o StrictHostKeyChecking=no \
@@ -138,7 +215,12 @@ jobs:
         run: |
           kill $(cat vm.pid) || true
 
-      - name: Upload SARIF to GitHub Security
+      - name: Upload Trivy SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: report.sarif
+
+      - name: Upload OpenSCAP SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: report-scap.sarif
