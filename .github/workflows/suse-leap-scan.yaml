@@ -108,7 +108,7 @@ jobs:
           </profile>
           EOF
 
-          genisoimage -o autoinst.iso -V "OEMDRV" -J -r autoinst.xml
+          genisoimage -o autoinst.iso -V "AUTOYAST" -J -r autoinst.xml
 
       - name: Extract kernel + initrd from the ISO
         run: |
@@ -135,8 +135,8 @@ jobs:
             -drive file=suse-leap.qcow2,format=qcow2,if=virtio \
             -kernel linux \
             -initrd initrd \
-            -append "install=http://download.opensuse.org/distribution/leap/16.0/repo/oss autoyast=cdrom:/autoinst.xml console=ttyS0,115200 textmode=1 rd.neednet=1" \
-            -drive file=autoinst.iso,media=cdrom \
+            -append "install=http://download.opensuse.org/distribution/leap/16.0/repo/oss autoyast=device://LABEL=AUTOYAST/autoinst.xml console=ttyS0,115200 rd.neednet=1 rd.debug" \
+            -drive file=autoinst.iso,if=ide,media=cdrom \
             -netdev user,id=net0,hostfwd=tcp::2222-:22 \
             -device virtio-net-pci,netdev=net0 \
             -nographic \
