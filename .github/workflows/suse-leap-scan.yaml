@@ -54,70 +54,6 @@ jobs:
         run: |
           ssh-keygen -t rsa -b 4096 -f id_rsa -N ""
 
-      - name: Create AutoYaST ISO
-        run: |
-          PUBKEY=$(cat id_rsa.pub)
-          cat > autoinst.xml <<EOF
-          <profile xmlns="http://www.suse.com/1.0/yast2ns">
-
-            <general>
-              <mode>
-                <confirm config:type="boolean">false</confirm>
-                <final_reboot config:type="boolean">true</final_reboot>
-              </mode>
-            </general>
-
-            <users config:type="list">
-              <user>
-                <username>clouduser</username>
-                <ssh_authorized_keys>
-                  <ssh_authorized_key>$PUBKEY</ssh_authorized_key>
-                </ssh_authorized_keys>
-                <encrypted config:type="boolean">false</encrypted>
-                <user_password>opensuse</user_password>
-                <groups>wheel</groups>
-              </user>
-            </users>
-
-            <root_password>opensuse</root_password>
-
-            <networking>
-              <keep_install_network config:type="boolean">true</keep_install_network>
-            </networking>
-
-            <services-manager>
-              <default_target>multi-user</default_target>
-              <services>
-                <enable config:type="list">
-                  <service>sshd</service>
-                </enable>
-              </services>
-            </services-manager>
-
-            <firewall>
-              <enable_firewall config:type="boolean">false</enable_firewall>
-            </firewall>
-
-            <partitioning config:type="list">
-              <drive>
-                <initialize config:type="boolean">true</initialize>
-                <use>all</use>
-              </drive>
-            </partitioning>
-
-          </profile>
-          EOF
-
-          genisoimage -o autoinst.iso -V "AUTOYAST" -J -r autoinst.xml
-
-      - name: Extract kernel + initrd from the ISO
-        run: |
-          mkdir iso
-          sudo mount -o loop install.iso iso
-          cp iso/boot/x86_64/loader/linux .
-          cp iso/boot/x86_64/loader/initrd .
-          sudo umount iso
-
       - name: Start openSUSE installer VM
         run: |
           OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" | head -n 1)
@@ -134,17 +70,50 @@ jobs:
             -drive if=pflash,format=raw,file=OVMF_VARS.fd \
             -drive file=suse-leap.qcow2,format=qcow2,if=virtio \
             -drive file=install.iso,media=cdrom \
-            -kernel linux \
-            -initrd initrd \
-            -append "install=cdrom autoyast=device://LABEL=AUTOYAST/autoinst.xml console=ttyS0,115200 rd.neednet=1 rd.debug" \
-            -drive file=autoinst.iso,if=ide,media=cdrom \
-            -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+            -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:443 \
             -device virtio-net-pci,netdev=net0 \
             -nographic \
             -serial mon:stdio \
             > vm.log 2>&1 &
 
           echo $! > vm.pid
+
+      - name: Wait for Agama API
+        run: |
+          for i in {1..120}; do
+            if curl -s https://localhost:8080/api/v1 >/dev/null 2>&1; then
+              echo "Agama API ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
+
+      - name: Configure Agama installer
+        run: |
+          PUBKEY=$(cat id_rsa.pub)
+
+          cat > agama-config.json <<EOF
+          {
+            "user": {
+              "name": "clouduser",
+              "password": "opensuse",
+              "ssh_keys": ["$PUBKEY"]
+            },
+            "storage": {
+              "mode": "use-all-disks"
+            },
+            "services": {
+              "sshd": true
+            }
+          }
+          EOF
+
+          curl -X POST https://localhost:8080/api/v1/config \
+            -H "Content-Type: application/json" \
+            --data-binary @agama-config.json
+          
+          curl -X POST https://localhost:8080/api/v1/installation/start
 
       - name: Wait for SSH to be fully ready
         run: |
