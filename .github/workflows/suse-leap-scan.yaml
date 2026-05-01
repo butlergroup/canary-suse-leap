@@ -36,19 +36,10 @@ jobs:
             netcat-openbsd \
             ca-certificates ovmf
 
-      - name: Download & convert EC2 image
+      - name: Download image
         run: |
-          curl -L --retry 5 -o suse.raw.xz \
-            https://download.opensuse.org/repositories/Cloud:/Images:/Leap_16.0/images/openSUSE-Leap-16.0.x86_64-0.99.6-Azure-Build1.56.vhdfixed.xz 
-          unxz suse.raw.xz 
-          ls -lah
-          IMAGE=$(find . -type f \( -name "*.raw" -o -name "*.img" -o -name "*.qcow2" \) | head -n 1)
-
-          echo "Found image: $IMAGE"
-
-          qemu-img convert -O qcow2 "$IMAGE" suse-leap.img
-
-          rm -rf suse.raw.xz
+          curl -L --retry 5 -o suse-leap.img \
+            https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-kvm-and-xen.qcow2
 
       - name: Generate SSH key
         run: |
