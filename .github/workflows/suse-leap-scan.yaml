@@ -66,6 +66,8 @@ jobs:
                 - $(cat id_rsa.pub)
           ssh_pwauth: false
           disable_root: true
+          bootcmd:
+            - systemctl disable cloud-init-local.service
           EOF
 
           cat > meta-data <<EOF
