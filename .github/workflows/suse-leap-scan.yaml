@@ -36,13 +36,23 @@ jobs:
             netcat-openbsd \
             ca-certificates ovmf
 
-      - name: Download & convert EC2 image
+      - name: Download & convert image
         run: |
-          curl -L --retry 5 -o suse.raw.xz \
-            https://download.opensuse.org/repositories/Cloud:/Images:/Leap_16.0/images/openSUSE-Leap-16.0.x86_64-0.99.6-EC2-Build1.53.raw.xz && \
-          unxz suse.raw.xz && \
-          qemu-img convert -f raw -O qcow2 suse.raw suse-leap.img && \
-          rm suse.raw
+          curl -L --retry 5 -o suse.tar.gz \
+            https://download.opensuse.org/repositories/Cloud:/Images:/Leap_16.0/images/openSUSE-Leap-16.0.x86_64-0.99.6-GCE-Build1.50.tar.gz
+
+          mkdir -p img_extract
+          tar -xzf suse.tar.gz -C img_extract
+
+          ls -lah img_extract
+
+          IMAGE=$(find img_extract -type f \( -name "*.raw" -o -name "*.img" -o -name "*.qcow2" \) | head -n 1)
+
+          echo "Found image: $IMAGE"
+
+          qemu-img convert -O qcow2 "$IMAGE" suse-leap.img
+
+          rm -rf img_extract suse.tar.gz
 
       - name: Generate SSH key
         run: |
@@ -52,10 +62,6 @@ jobs:
         run: |
           cat > user-data <<EOF
           #cloud-config
-          datasource_list: [ NoCloud ]
-          datasource:
-            NoCloud:
-              seedfrom: /dev/vdb
           users:
             - default
             - name: clouduser
@@ -66,14 +72,11 @@ jobs:
                 - $(cat id_rsa.pub)
           ssh_pwauth: false
           disable_root: true
-          bootcmd:
-            - systemctl disable cloud-init-local.service
           EOF
 
           cat > meta-data <<EOF
           instance-id: iid-local01
           local-hostname: suse-leap
-          dsmode: local
           EOF
 
           cloud-localds seed.iso user-data meta-data
