@@ -133,9 +133,10 @@ jobs:
             -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
             -drive if=pflash,format=raw,file=OVMF_VARS.fd \
             -drive file=suse-leap.qcow2,format=qcow2,if=virtio \
+            -drive file=install.iso,media=cdrom \
             -kernel linux \
             -initrd initrd \
-            -append "install=http://download.opensuse.org/distribution/leap/16.0/repo/oss autoyast=device://LABEL=AUTOYAST/autoinst.xml console=ttyS0,115200 rd.neednet=1 rd.debug" \
+            -append "install=cdrom autoyast=device://LABEL=AUTOYAST/autoinst.xml console=ttyS0,115200 rd.neednet=1 rd.debug" \
             -drive file=autoinst.iso,if=ide,media=cdrom \
             -netdev user,id=net0,hostfwd=tcp::2222-:22 \
             -device virtio-net-pci,netdev=net0 \
