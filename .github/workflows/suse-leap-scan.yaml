@@ -70,6 +70,7 @@ jobs:
             -drive if=pflash,format=raw,file=OVMF_VARS.fd \
             -drive file=suse-leap.qcow2,format=qcow2,if=virtio \
             -drive file=install.iso,media=cdrom \
+            -boot order=d \
             -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 \
             -device virtio-net-pci,netdev=net0 \
             -nographic \
@@ -81,17 +82,15 @@ jobs:
       - name: Wait for Agama API
         run: |
           for i in {1..120}; do
-            echo "Attempt $i/120..."
-
             if curl -m 2 -k -f http://localhost:8080/api/v1 >/dev/null 2>&1; then
-              echo "Agama API ready"
+              echo "✅ Agama API ready"
               exit 0
             fi
-
-            sleep 5
+            echo "⏳ Waiting for Agama API..."
+            sleep 2
           done
 
-          echo "Agama API failed to become ready"
+          echo "❌ Agama API failed to become ready"
           exit 1
 
       - name: Configure Agama installer
