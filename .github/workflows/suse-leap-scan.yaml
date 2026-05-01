@@ -70,7 +70,7 @@ jobs:
             -drive if=pflash,format=raw,file=OVMF_VARS.fd \
             -drive file=suse-leap.qcow2,format=qcow2,if=virtio \
             -drive file=install.iso,media=cdrom \
-            -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:443 \
+            -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 \
             -device virtio-net-pci,netdev=net0 \
             -nographic \
             -serial mon:stdio \
