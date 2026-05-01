@@ -52,6 +52,7 @@ jobs:
         run: |
           cat > user-data <<EOF
           #cloud-config
+          datasource_list: [ NoCloud ]
           users:
             - default
             - name: clouduser
@@ -67,6 +68,7 @@ jobs:
           cat > meta-data <<EOF
           instance-id: iid-local01
           local-hostname: suse-leap
+          dsmode: local
           EOF
 
           cloud-localds seed.iso user-data meta-data
@@ -80,7 +82,6 @@ jobs:
           echo "Using OVMF_VARS: $OVMF_VARS"
 
           cp "$OVMF_VARS" ./OVMF_VARS.fd && \
-          ls -R /usr/share | grep -i ovmf || true && \
           qemu-system-x86_64 \
             -m 2048 \
             -smp 2 \
