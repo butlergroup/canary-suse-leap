@@ -36,23 +36,19 @@ jobs:
             netcat-openbsd \
             ca-certificates ovmf
 
-      - name: Download & convert image
+      - name: Download & convert EC2 image
         run: |
-          curl -L --retry 5 -o suse.tar.gz \
-            https://download.opensuse.org/repositories/Cloud:/Images:/Leap_16.0/images/openSUSE-Leap-16.0.x86_64-0.99.6-GCE-Build1.50.tar.gz
-
-          mkdir -p img_extract
-          tar -xzf suse.tar.gz -C img_extract
-
-          ls -lah img_extract
-
-          IMAGE=$(find img_extract -type f \( -name "*.raw" -o -name "*.img" -o -name "*.qcow2" \) | head -n 1)
+          curl -L --retry 5 -o suse.raw.xz \
+            https://download.opensuse.org/repositories/Cloud:/Images:/Leap_16.0/images/openSUSE-Leap-16.0.x86_64-0.99.6-Azure-Build1.56.vhdfixed.xz 
+          unxz suse.raw.xz 
+          ls -lah
+          IMAGE=$(find . -type f \( -name "*.raw" -o -name "*.img" -o -name "*.qcow2" \) | head -n 1)
 
           echo "Found image: $IMAGE"
 
           qemu-img convert -O qcow2 "$IMAGE" suse-leap.img
 
-          rm -rf img_extract suse.tar.gz
+          rm -rf suse.raw.xz
 
       - name: Generate SSH key
         run: |
@@ -89,7 +85,7 @@ jobs:
           echo "Using OVMF_CODE: $OVMF_CODE"
           echo "Using OVMF_VARS: $OVMF_VARS"
 
-          cp "$OVMF_VARS" ./OVMF_VARS.fd && \
+          cp "$OVMF_VARS" ./OVMF_VARS.fd 
           qemu-system-x86_64 \
             -m 2048 \
             -smp 2 \
