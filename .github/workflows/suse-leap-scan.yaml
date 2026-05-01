@@ -81,12 +81,17 @@ jobs:
       - name: Wait for Agama API
         run: |
           for i in {1..120}; do
-            if curl -s https://localhost:8080/api/v1 >/dev/null 2>&1; then
+            echo "Attempt $i/120..."
+
+            if curl -m 2 -k -f http://localhost:8080/api/v1 >/dev/null 2>&1; then
               echo "Agama API ready"
               exit 0
             fi
+
             sleep 5
           done
+
+          echo "Agama API failed to become ready"
           exit 1
 
       - name: Configure Agama installer
