@@ -147,7 +147,7 @@ jobs:
 
       - name: Wait for SSH to be fully ready
         run: |
-          for i in {1..120}; do
+          for i in {1..240}; do
             if ssh -i id_rsa \
               -o StrictHostKeyChecking=no \
               -o ConnectTimeout=2 \
