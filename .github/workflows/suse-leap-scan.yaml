@@ -41,64 +41,90 @@ jobs:
             libxml2-utils \
             jq python3-xmltodict
 
-      - name: Download image
+      - name: Download installer ISO
         run: |
-          curl -L --retry 5 -o suse-leap.img \
-            https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-kvm-and-xen.qcow2
+          curl -L --retry 5 -o install.iso \
+            https://download.opensuse.org/distribution/leap/16.0/offline/Leap-16.0-online-installer-x86_64.install.iso
+
+      - name: Create VM disk
+        run: |
+          qemu-img create -f qcow2 suse-leap.qcow2 20G
 
       - name: Generate SSH key
         run: |
           ssh-keygen -t rsa -b 4096 -f id_rsa -N ""
 
-      - name: Create cloud-init config
+      - name: Create AutoYaST ISO
         run: |
-          cat > user-data <<EOF
-          #cloud-config
-          users:
-            - default
-            - name: clouduser
-              sudo: ALL=(ALL) NOPASSWD:ALL
-              groups: sudo
-              shell: /bin/bash
-              ssh_authorized_keys:
-                - $(cat id_rsa.pub)
-          ssh_pwauth: false
-          disable_root: true
-          bootcmd:
-            - systemctl disable jeos-firstboot.service
-            - systemctl mask jeos-firstboot.service
-            - systemctl stop jeos-firstboot.service
+          PUBKEY=$(cat id_rsa.pub)
+          cat > autoinst.xml <<'EOF'
+          <profile xmlns="http://www.suse.com/1.0/yast2ns">
+
+            <general>
+              <mode>
+                <confirm config:type="boolean">false</confirm>
+              </mode>
+            </general>
+
+            <users config:type="list">
+              <user>
+                <username>clouduser</username>
+                <ssh_authorized_keys>
+                  <ssh_authorized_key>$PUBKEY</ssh_authorized_key>
+                </ssh_authorized_keys>
+                <encrypted config:type="boolean">false</encrypted>
+                <user_password>opensuse</user_password>
+                <groups>sudo</groups>
+              </user>
+            </users>
+
+            <networking>
+              <keep_install_network config:type="boolean">true</keep_install_network>
+            </networking>
+
+            <services-manager>
+              <default_target>multi-user</default_target>
+              <services>
+                <enable config:type="list">
+                  <service>sshd</service>
+                </enable>
+              </services>
+            </services-manager>
+
+            <partitioning config:type="list">
+              <drive>
+                <initialize config:type="boolean">true</initialize>
+                <use>all</use>
+              </drive>
+            </partitioning>
+
+          </profile>
           EOF
 
-          cat > meta-data <<EOF
-          instance-id: iid-local01
-          local-hostname: suse-leap
-          EOF
+          genisoimage -o autoinst.iso -V "AUTOINST" -J -r autoinst.xml
 
-          cloud-localds seed.iso user-data meta-data
-
-      - name: Start suse-leap VM
+      - name: Start openSUSE installer VM
         run: |
           OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" | head -n 1)
           OVMF_VARS=$(find /usr/share -name "OVMF_VARS*.fd" | head -n 1)
 
-          echo "Using OVMF_CODE: $OVMF_CODE"
-          echo "Using OVMF_VARS: $OVMF_VARS"
+          cp "$OVMF_VARS" ./OVMF_VARS.fd
 
-          cp "$OVMF_VARS" ./OVMF_VARS.fd 
           qemu-system-x86_64 \
-            -m 2048 \
+            -m 4096 \
             -smp 2 \
-            -machine type=q35,accel=tcg \
+            -machine q35,accel=tcg \
             -cpu max \
             -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
             -drive if=pflash,format=raw,file=OVMF_VARS.fd \
-            -drive file=suse-leap.img,format=qcow2,if=virtio \
-            -drive file=seed.iso,format=raw,if=virtio \
+            -drive file=suse-leap.qcow2,format=qcow2,if=virtio \
+            -cdrom install.iso \
+            -drive file=autoinst.iso,format=raw,if=virtio \
             -netdev user,id=net0,hostfwd=tcp::2222-:22 \
             -device virtio-net-pci,netdev=net0 \
             -nographic \
             -serial mon:stdio \
+            -append "console=ttyS0 autoyast=device:/dev/vdb" \
             > vm.log 2>&1 &
 
           echo $! > vm.pid
