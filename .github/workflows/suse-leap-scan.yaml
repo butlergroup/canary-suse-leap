@@ -57,12 +57,13 @@ jobs:
       - name: Create AutoYaST ISO
         run: |
           PUBKEY=$(cat id_rsa.pub)
-          cat > autoinst.xml <<'EOF'
+          cat > autoinst.xml <<EOF
           <profile xmlns="http://www.suse.com/1.0/yast2ns">
 
             <general>
               <mode>
                 <confirm config:type="boolean">false</confirm>
+                <final_reboot config:type="boolean">true</final_reboot>
               </mode>
             </general>
 
@@ -74,9 +75,11 @@ jobs:
                 </ssh_authorized_keys>
                 <encrypted config:type="boolean">false</encrypted>
                 <user_password>opensuse</user_password>
-                <groups>sudo</groups>
+                <groups>wheel</groups>
               </user>
             </users>
+
+            <root_password>opensuse</root_password>
 
             <networking>
               <keep_install_network config:type="boolean">true</keep_install_network>
@@ -91,6 +94,10 @@ jobs:
               </services>
             </services-manager>
 
+            <firewall>
+              <enable_firewall config:type="boolean">false</enable_firewall>
+            </firewall>
+
             <partitioning config:type="list">
               <drive>
                 <initialize config:type="boolean">true</initialize>
@@ -101,7 +108,15 @@ jobs:
           </profile>
           EOF
 
-          genisoimage -o autoinst.iso -V "AUTOINST" -J -r autoinst.xml
+          genisoimage -o autoinst.iso -V "OEMDRV" -J -r autoinst.xml
+
+      - name: Extract kernel + initrd from the ISO
+        run: |
+          mkdir iso
+          sudo mount -o loop install.iso iso
+          cp iso/boot/x86_64/loader/linux .
+          cp iso/boot/x86_64/loader/initrd .
+          sudo umount iso
 
       - name: Start openSUSE installer VM
         run: |
@@ -118,8 +133,10 @@ jobs:
             -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
             -drive if=pflash,format=raw,file=OVMF_VARS.fd \
             -drive file=suse-leap.qcow2,format=qcow2,if=virtio \
-            -cdrom install.iso \
-            -drive file=autoinst.iso,format=raw,if=virtio \
+            -kernel linux \
+            -initrd initrd \
+            -append "install=http://download.opensuse.org/distribution/leap/16.0/repo/oss autoyast=cdrom:/autoinst.xml console=ttyS0,115200 textmode=1 rd.neednet=1" \
+            -drive file=autoinst.iso,media=cdrom \
             -netdev user,id=net0,hostfwd=tcp::2222-:22 \
             -device virtio-net-pci,netdev=net0 \
             -nographic \
