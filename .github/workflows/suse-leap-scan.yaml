@@ -133,7 +133,7 @@ jobs:
         run: |
           echo "⏳ Waiting for installation to complete..."
 
-          for i in {1..600}; do
+          for i in {1..180}; do
             if grep -q "rebooting system" vm.log || grep -q "Reached target Shutdown" vm.log; then
               echo "✅ Installation complete"
               break
