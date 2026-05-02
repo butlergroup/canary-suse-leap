@@ -73,12 +73,20 @@ jobs:
               <keep_install_network config:type="boolean">true</keep_install_network>
             </networking>
 
-            <partitioning config:type="list">
-              <drive>
-                <initialize config:type="boolean">true</initialize>
-                <use>all</use>
-              </drive>
-            </partitioning>
+          <partitioning config:type="list">
+            <drive>
+              <device>/dev/sda</device>
+              <initialize config:type="boolean">true</initialize>
+              <partitions config:type="list">
+                <partition>
+                  <partition_id>1</partition_id>
+                  <filesystem config:type="symbol">ext4</filesystem>
+                  <size>max</size>
+                  <mount>/</mount>
+                </partition>
+              </partitions>
+            </drive>
+          </partitioning>
 
           </profile>
           EOF
@@ -123,11 +131,15 @@ jobs:
 
       - name: Wait for installation to complete
         run: |
-          for i in {1..120}; do
-            echo "⏳ Waiting for installation to complete..."
+          echo "⏳ Waiting for installation to complete..."
+
+          for i in {1..600}; do
+            if grep -q "rebooting system" vm.log || grep -q "Reached target Shutdown" vm.log; then
+              echo "✅ Installation complete"
+              break
+            fi
             sleep 2
           done
-          echo "✅ Wait step complete."
 
       - name: Dump VM logs
         run: cat vm.log || true
@@ -135,7 +147,12 @@ jobs:
       - name: Stop VM
         if: always()
         run: |
+          echo "Stopping VM..."
           kill $(cat vm.pid) || true
+
+      - name: Inspect qcow2 contents
+        run: |
+          sudo virt-filesystems -a suse-leap.qcow2 --all --long -h
 
       - name: Mount qcow2 image
         run: |
@@ -145,7 +162,7 @@ jobs:
           sudo virt-filesystems -a suse-leap.qcow2 --all --long -h
 
           # Mount the root filesystem (usually /dev/sda2 or similar)
-          sudo guestmount -a suse-leap.qcow2 -i --ro /mnt/suse-root
+          sudo guestmount -a suse-leap.qcow2 -m /dev/sda1 --ro /mnt/suse-root
 
       - name: Run Trivy scan (offline rootfs)
         run: |
