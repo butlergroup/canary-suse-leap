@@ -35,134 +35,17 @@ jobs:
             libguestfs-tools \
             guestmount \
             netcat-openbsd \
-            ca-certificates ovmf 
+            ca-certificates  
 
-      - name: Download installer ISO
+      - name: Download openSUSE qcow2 image
         run: |
-          curl -L --retry 5 -o install.iso \
-            https://download.opensuse.org/distribution/leap/16.0/offline/Leap-16.0-online-installer-x86_64.install.iso
-
-      - name: Create VM disk
-        run: |
-          qemu-img create -f qcow2 suse-leap.qcow2 20
-
-      - name: Create AutoYaST ISO
-        run: |
-          cat > autoinst.xml <<EOF
-          <profile xmlns="http://www.suse.com/1.0/yast2ns">
-
-            <general>
-              <mode>
-                <confirm config:type="boolean">false</confirm>
-                <final_reboot config:type="boolean">true</final_reboot>
-              </mode>
-            </general>
-
-            <users config:type="list">
-              <user>
-                <username>clouduser</username>
-                <encrypted config:type="boolean">false</encrypted>
-                <user_password>opensuse</user_password>
-                <groups>wheel</groups>
-              </user>
-            </users>
-
-            <root_password>opensuse</root_password>
-
-            <networking>
-              <keep_install_network config:type="boolean">true</keep_install_network>
-            </networking>
-
-          <partitioning config:type="list">
-            <drive>
-              <device>/dev/sda</device>
-              <initialize config:type="boolean">true</initialize>
-              <partitions config:type="list">
-                <partition>
-                  <partition_id>1</partition_id>
-                  <filesystem config:type="symbol">ext4</filesystem>
-                  <size>max</size>
-                  <mount>/</mount>
-                </partition>
-              </partitions>
-            </drive>
-          </partitioning>
-
-          </profile>
-          EOF
-
-          genisoimage -o autoinst.iso -V "AUTOYAST" -J -r autoinst.xml
-
-      - name: Extract kernel + initrd from the ISO
-        run: |
-          mkdir iso
-          sudo mount -o loop install.iso iso
-          cp iso/boot/x86_64/loader/linux .
-          cp iso/boot/x86_64/loader/initrd .
-          sudo umount iso
-
-      - name: Start openSUSE installer VM
-        run: |
-          OVMF_CODE=$(find /usr/share -name "OVMF_CODE*.fd" | head -n 1)
-          OVMF_VARS=$(find /usr/share -name "OVMF_VARS*.fd" | head -n 1)
-
-          cp "$OVMF_VARS" ./OVMF_VARS.fd
-
-          qemu-system-x86_64 \
-            -m 4096 \
-            -smp 2 \
-            -machine q35,accel=tcg \
-            -cpu max \
-            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-            -drive if=pflash,format=raw,file=OVMF_VARS.fd \
-            -drive file=suse-leap.qcow2,format=qcow2,if=virtio \
-            -drive file=install.iso,media=cdrom \
-            -kernel linux \
-            -initrd initrd \
-            -append "install=cdrom autoyast=device://LABEL=AUTOYAST/autoinst.xml console=ttyS0,115200 rd.neednet=1 rd.debug" \
-            -drive file=autoinst.iso,if=ide,media=cdrom \
-            -netdev user,id=net0,hostfwd=tcp::2222-:22 \
-            -device virtio-net-pci,netdev=net0 \
-            -nographic \
-            -serial mon:stdio \
-            > vm.log 2>&1 &
-
-          echo $! > vm.pid
-
-      - name: Wait for installation to complete
-        run: |
-          echo "⏳ Waiting for installation to complete..."
-
-          for i in {1..180}; do
-            if grep -q "rebooting system" vm.log || grep -q "Reached target Shutdown" vm.log; then
-              echo "✅ Installation complete"
-              break
-            fi
-            sleep 2
-          done
-
-      - name: Dump VM logs
-        run: cat vm.log || true
-
-      - name: Stop VM
-        if: always()
-        run: |
-          echo "Stopping VM..."
-          kill $(cat vm.pid) || true
-
-      - name: Inspect qcow2 contents
-        run: |
-          sudo virt-filesystems -a suse-leap.qcow2 --all --long -h
+          curl -L -o suse-leap.qcow2 \
+            https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-kvm-and-xen.qcow2
 
       - name: Mount qcow2 image
         run: |
           sudo mkdir -p /mnt/suse-root
-
-          # Inspect partitions (useful for debugging)
-          sudo virt-filesystems -a suse-leap.qcow2 --all --long -h
-
-          # Mount the root filesystem (usually /dev/sda2 or similar)
-          sudo guestmount -a suse-leap.qcow2 -m /dev/sda1 --ro /mnt/suse-root
+          sudo guestmount -a suse-leap.qcow2 -i --ro /mnt/suse-root
 
       - name: Run Trivy scan (offline rootfs)
         run: |
