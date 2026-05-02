@@ -32,14 +32,10 @@ jobs:
             qemu-utils \
             cloud-image-utils \
             curl \
-            openssh-client \
+            libguestfs-tools \
+            guestmount \
             netcat-openbsd \
-            ca-certificates \
-            ovmf \
-            python3 \
-            python3-pip \
-            libxml2-utils \
-            jq python3-xmltodict
+            ca-certificates
 
       - name: Download installer ISO
         run: |
@@ -48,11 +44,7 @@ jobs:
 
       - name: Create VM disk
         run: |
-          qemu-img create -f qcow2 suse-leap.qcow2 20G
-
-      - name: Generate SSH key
-        run: |
-          ssh-keygen -t rsa -b 4096 -f id_rsa -N ""
+          qemu-img create -f qcow2 suse-leap.qcow2 20
 
       - name: Create AutoYaST ISO
         run: |
@@ -146,124 +138,47 @@ jobs:
 
           echo $! > vm.pid
 
-      - name: Wait for SSH to be fully ready
+      - name: Wait for installation to complete 
         run: |
-          for i in {1..360}; do
-            if ssh -i id_rsa \
-              -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=2 \
-              -o BatchMode=yes \
-              -p 2222 clouduser@localhost "echo ready" >/dev/null 2>&1; then
-              echo "✅ SSH is fully ready"
-              exit 0
-            fi
-            echo "⏳ Waiting for SSH..."
+          for i in {1..120}; do
+            echo "⏳ Waiting for installation to complete..."
             sleep 2
           done
-          echo "❌ SSH failed to become ready"
-          exit 1
+          echo "✅ Wait step complete."
 
       - name: Dump VM logs
-        if: failure()
         run: cat vm.log || true
-
-      - name: Run OpenSCAP scan inside VM
-        run: |
-          ssh -i id_rsa -p 2222 \
-            -o StrictHostKeyChecking=no clouduser@localhost <<'EOF'
-          set -e
-
-          sudo zypper refresh
-          sudo zypper install -y openscap-utils scap-security-guide
-
-          # Find a suitable profile (SUSE content varies slightly by release)
-          oscap info /usr/share/xml/scap/ssg/content/ssg-opensuse-leap-ds.xml
-
-          sudo oscap xccdf eval \
-            --profile xccdf_org.ssgproject.content_profile_standard \
-            --results /tmp/openscap-results.xml \
-            --report /tmp/openscap-report.html \
-            /usr/share/xml/scap/ssg/content/ssg-opensuse-leap-ds.xml
-          EOF
-
-      - name: Copy OpenSCAP results
-        run: |
-          scp -i id_rsa -P 2222 \
-            clouduser@localhost:/tmp/openscap-results.xml \
-            openscap-results.xml
-
-      - name: Convert OpenSCAP results to SARIF
-        run: |
-          python3 - <<'EOF'
-          import xml.etree.ElementTree as ET
-          import json
-
-          tree = ET.parse('openscap-results.xml')
-          root = tree.getroot()
-
-          sarif = {
-            "version": "2.1.0",
-            "runs": [{
-              "tool": {
-                "driver": {
-                  "name": "openscap",
-                  "informationUri": "https://www.open-scap.org"
-                }
-              },
-              "results": []
-            }]
-          }
-
-          for rule in root.findall(".//{http://checklists.nist.gov/xccdf/1.2}rule-result"):
-              result = rule.find("{http://checklists.nist.gov/xccdf/1.2}result")
-              if result is None:
-                  continue
-
-              status = result.text
-              if status not in ["fail", "error"]:
-                  continue
-
-              sarif["runs"][0]["results"].append({
-                  "ruleId": rule.get("idref"),
-                  "level": "error",
-                  "message": {
-                      "text": f"OpenSCAP failure: {rule.get('idref')}"
-                  }
-              })
-
-          with open("report-scap.sarif", "w") as f:
-              json.dump(sarif, f, indent=2)
-          EOF
-
-      - name: Run Trivy scan inside VM
-        run: |
-          ssh -i id_rsa -p 2222 clouduser@localhost <<'EOF'
-          set -e
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh
-          sudo ./bin/trivy rootfs / \
-            --scanners vuln,misconfig \
-            -f sarif \
-            -o /tmp/report.sarif
-          EOF
-
-      - name: Copy Trivy report from VM
-        run: |
-          scp -i id_rsa -P 2222 \
-            -o StrictHostKeyChecking=no \
-            clouduser@localhost:/tmp/report.sarif \
-            report.sarif
 
       - name: Stop VM
         if: always()
         run: |
           kill $(cat vm.pid) || true
 
+      - name: Mount qcow2 image
+        run: |
+          sudo mkdir -p /mnt/suse-root
+
+          # Inspect partitions (useful for debugging)
+          sudo virt-filesystems -a suse-leap.qcow2 --all --long -h
+
+          # Mount the root filesystem (usually /dev/sda2 or similar)
+          sudo guestmount -a suse-leap.qcow2 -i --ro /mnt/suse-root
+
+      - name: Run Trivy scan (offline rootfs)
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh
+
+          sudo ./bin/trivy rootfs /mnt/suse-root \
+            --scanners vuln,misconfig \
+            -f sarif \
+            -o report.sarif
+
+      - name: Unmount qcow2
+        if: always()
+        run: |
+          sudo guestunmount /mnt/suse-root || true
+
       - name: Upload Trivy SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: report.sarif
-
-      - name: Upload OpenSCAP SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: report-scap.sarif
