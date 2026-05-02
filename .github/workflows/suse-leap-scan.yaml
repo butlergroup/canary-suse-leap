@@ -35,7 +35,7 @@ jobs:
             libguestfs-tools \
             guestmount \
             netcat-openbsd \
-            ca-certificates
+            ca-certificates ovmf 
 
       - name: Download installer ISO
         run: |
