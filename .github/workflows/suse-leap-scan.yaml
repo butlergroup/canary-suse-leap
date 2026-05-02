@@ -48,7 +48,6 @@ jobs:
 
       - name: Create AutoYaST ISO
         run: |
-          PUBKEY=$(cat id_rsa.pub)
           cat > autoinst.xml <<EOF
           <profile xmlns="http://www.suse.com/1.0/yast2ns">
 
@@ -62,9 +61,6 @@ jobs:
             <users config:type="list">
               <user>
                 <username>clouduser</username>
-                <ssh_authorized_keys>
-                  <ssh_authorized_key>$PUBKEY</ssh_authorized_key>
-                </ssh_authorized_keys>
                 <encrypted config:type="boolean">false</encrypted>
                 <user_password>opensuse</user_password>
                 <groups>wheel</groups>
@@ -76,19 +72,6 @@ jobs:
             <networking>
               <keep_install_network config:type="boolean">true</keep_install_network>
             </networking>
-
-            <services-manager>
-              <default_target>multi-user</default_target>
-              <services>
-                <enable config:type="list">
-                  <service>sshd</service>
-                </enable>
-              </services>
-            </services-manager>
-
-            <firewall>
-              <enable_firewall config:type="boolean">false</enable_firewall>
-            </firewall>
 
             <partitioning config:type="list">
               <drive>
@@ -138,7 +121,7 @@ jobs:
 
           echo $! > vm.pid
 
-      - name: Wait for installation to complete 
+      - name: Wait for installation to complete
         run: |
           for i in {1..120}; do
             echo "⏳ Waiting for installation to complete..."
